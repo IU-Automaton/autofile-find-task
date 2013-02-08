@@ -1,6 +1,7 @@
 'use strict';
 
 var https = require('https');
+var fs    = require('fs');
 
 function getKeywordSearchPath(keyword) {
     return '/-/_view/byKeyword?startkey=["' + keyword + '"]&endkey=["' + keyword + '",{}]&group_level=3';
@@ -79,11 +80,64 @@ var task = {
             }
         },
         {
-            description: 'Build index from NPM registry data',
+            description: 'Parse NPM registry data',
             on: '{{update-cache}}',
             task: function (opt, ctx, next) {
-                ctx.log.debugln('Going to build index from', inspect(opt.registryData));
+                ctx.log.debugln('Going to build index');
 
+                var tasks = {};
+
+                var rows = opt.registryData.rows;
+
+                for (var k in opt.registryData.rows) {
+                    tasks[rows[k].key[1]] = {
+                        description: rows[k].key[2]
+                    };
+                }
+
+                ctx.log.debugln('result:', inspect(tasks));
+
+                opt.registryData = tasks;
+
+                next();
+            }
+        },
+        {
+            description: 'Prepare stop words',
+            on: '{{update-cache}}',
+            task: function (opt, ctx, next) {
+                ctx.log.debugln('Building stopword index');
+                var stopWordsIdx = {};
+                
+                fs.readFile('./stopwords', function (err, data) {
+                    if (err) {
+                        return next(new Error('Could not read stopwords file: ' + err));
+                    }
+
+                    var stopWords = data.toString().split('\n');
+                    for (var k in stopWords) {
+                        stopWordsIdx[stopWords[k]] = null;
+                    }
+
+                    opt.stopWordsIdx = stopWordsIdx;
+
+                    ctx.log.debugln(inspect(stopWordsIdx));
+
+                    next();
+                });
+            }
+        },
+        {
+            description: 'Build index from registry data',
+            on: '{{update-cache}}',
+            task: function (opt, ctx, next) {
+                next();
+            }
+        },
+        {
+            description: 'Load task index',
+            on: '{{!update-cache}}',
+            task: function (opt, ctx, next) {
                 next();
             }
         }
