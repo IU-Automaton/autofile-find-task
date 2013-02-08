@@ -27,6 +27,8 @@ function isStopWord(word) {
 }
 
 function tokenize(str) {
+    // TODO: support stemming and fuzzy match
+
     var tokens = str
         .toLowerCase()
         // remove undesired characters
@@ -234,37 +236,64 @@ var task = {
 
             task: function (opt, ctx, next) {
                 // look up occurrences of the query tokens in indexed tasks
-                var queryTokens = tokenize(opt.query);
-                var hits = {
+                var hits = opt.hits = {
                     name: {},
                     description: {}
                 };
 
-                queryTokens.forEach(function (token) {
-                    opt.registryDataIdx.fields.name[token].forEach(function (hitId) {
-                        hits.name[hitId] = hits.name[hitId] ? hits.name[hitId] + 1 : 1;
+
+                var names        = opt.registryDataIdx.fields.name;
+                var descriptions = opt.registryDataIdx.fields.description;
+                // for each query token
+                tokenize(opt.query).forEach(function (token) {
+                    // for each of the tasks that have that token on the name
+                    names[token].forEach(function (hitId) {
+                        // if this is the first hit for this task
+                        if (!hits[hitId]) {
+                            // add it to hit list
+                            hits[hitId] = {};
+                        }
+                        // increment hit count on the task name
+                        hits[hitId].name[hitId] = hits[hitId].name[hitId] ?
+                            hits[hitId].name[hitId] + 1
+                            : 1;
                     });
 
-                    opt.registryDataIdx.fields.description[token].forEach(function (hitId) {
-                        hits.description[hitId] = hits.description[hitId] ? hits.description[hitId] + 1 : 1;
+                    // for each of the tasks that have that token on the
+                    // description
+                    descriptions[token].forEach(function (hitId) {
+                        // if this is the first hit for this task
+                        if (!hits[hitId]) {
+                            // add it to hit list
+                            hits[hitId] = {};
+                        }
+                        // increment hit count on the task description
+                        hits[hitId].description[hitId] = hits[hitId].description[hitId] ?
+                            hits[hitId].description[hitId] + 1
+                            : 1;
                     });
                 });
+                 console.log(hits);
+                // for (var hitId in hits.name) {
+                //     console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.name[hitId]);
+                // }
 
-
-
-                // rank results
-
-
-                console.log(hits);
-                for (var hitId in hits.name) {
-                    console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.name[hitId]);
-                }
-
-                for (hitId in hits.description) {
-                    console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.description[hitId]);
-                }
+                // for (hitId in hits.description) {
+                //     console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.description[hitId]);
+                // }
 
                 next();
+            }
+        },
+        {
+            description: 'Rank matches',
+
+            task: function (opt, ctx, next) {
+                // TODO: improve ranker, as it currently pays no attention to
+                // token order or distance. Instead, it is currently based on
+                // token hit
+
+
             }
         }
     ]
