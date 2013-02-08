@@ -22,9 +22,7 @@ function populateIndex(index, field, records) {
     }
 }
 
-var index = Indexer.create({
-
-});
+var index = Indexer.create('name');
 
 populateIndex(index, 'name', users);
 
