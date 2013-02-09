@@ -1,0 +1,29 @@
+{
+  "name": "automaton-find-task",
+  "version": "0.0.0",
+  "description": "Task that allows the user to search for automaton community tasks",
+  "main": "autofile.js",
+  "dependencies": {
+    "indexer": "~1.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/IU-Automaton/automaton-find-task.git"
+  },
+  "keywords": [
+    "autofile",
+    "find",
+    "search",
+    "automaton",
+    "task",
+    "community"
+  ],
+  "author": "Indigo United",
+  "license": "MIT",
+  "readmeFilename": "README.md",
+  "gitHead": "dc4001b539abf383b0a442d911eb6dcd158362ac"
+}
