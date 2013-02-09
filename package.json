@@ -3,9 +3,7 @@
   "version": "0.0.0",
   "description": "Task that allows the user to search for automaton community tasks",
   "main": "autofile.js",
-  "dependencies": {
-    "indexer": "~1.0.2"
-  },
+  "dependencies": {},
   "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
