@@ -59,7 +59,7 @@ function tokenize(str) {
 // -----------------------------------------------------------------------------
 
 var task = {
-    id: 'task',
+    id: 'find-task',
     author: 'Indigo United',
     name: 'Find task',
 
