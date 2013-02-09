@@ -56,6 +56,47 @@ function tokenize(str) {
     return result;
 }
 
+function getScore(queryTokens, subjectTokens) {
+    var zeroScore = {
+        precision: 0,
+        recall:    0,
+        f1score:   0
+    };
+
+    if (!queryTokens.length || !subjectTokens.length) {
+        return zeroScore;
+    }
+
+    var intersectionCount = arrayIntersection(queryTokens, subjectTokens).length;
+
+    if (!intersectionCount) {
+        return zeroScore;
+    }
+
+    var precision = intersectionCount / queryTokens.length;
+    var recall    = intersectionCount / subjectTokens.length;
+
+    return {
+        precision: precision,
+        recall:    recall,
+        f1score:   2 * (precision * recall) / (precision + recall)
+    };
+}
+
+function arrayIntersection(a, b) {
+    var aLength = a.length,
+        result  = [],
+        j       = 0;
+
+    for (var i = 0; i < aLength; ++i) {
+        if (b.indexOf(a[i]) !== -1) {
+            result[j++] = a[i];
+        }
+    }
+
+    return result;
+}
+
 // -----------------------------------------------------------------------------
 
 var task = {
@@ -84,11 +125,16 @@ var task = {
             description: 'The factor to apply to the task description when' +
                          ' ranking',
             'default': 1
+        },
+        score_threshold: {
+            description: 'The score threshold that a match must reach for ' +
+                         'being included in the search results',
+            'default': 0.2
         }
     },
 
     filter: function (opt, ctx, next) {
-        if (true/* cache is considered outdated*/) {
+        if (true/* TODO: if cache is considered outdated*/) {
             opt['update-cache'] = true;
         }
 
@@ -101,41 +147,40 @@ var task = {
             on:          '{{update-cache}}',
 
             task: function (opt, ctx, next) {
-                var reqOpt = {
-                    hostname: '',
-                    port: 80,
-                    path: getKeywordSearchPath(opt.keyword),
-                    method: 'GET'
-                };
-
                 opt.registryData = '';
 
-                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
-                ctx.log.debugln('Going to fetch data from', registryUrl);
-                var req = https.get(registryUrl, function (res) {
-                    if (res.statusCode !== 200) {
-                        return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-                    }
+                // TODO: remove hack below
+                opt.registryData = require('./registryData.json');
+                next();
 
-                    ctx.log.debugln('Starting response');
+            // TODO: uncomment below
+            //     var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
+            //     ctx.log.debugln('Going to fetch data from', registryUrl);
+            //     //var req = https.get(registryUrl, function (res) {
 
-                    res.on('data', function (chunk) {
-                        ctx.log.debug('.');
-                        opt.registryData += chunk;
-                    });
+            //         if (res.statusCode !== 200) {
+            //             return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
+            //         }
 
-                    res.on('end', function () {
-                        ctx.log.debugln('Response ready');
-                        opt.registryData = JSON.parse(opt.registryData);
+            //         ctx.log.debugln('Starting response');
 
-                        next();
-                    });
+            //         res.on('data', function (chunk) {
+            //             ctx.log.debug('.');
+            //             opt.registryData += chunk;
+            //         });
 
-                });
+            //         res.on('end', function () {
+            //             ctx.log.debugln('Response ready');
+            //             opt.registryData = JSON.parse(opt.registryData);
 
-                req.on('error', function (err) {
-                    return next(new Error('Error fetching data from NPM registry: ' + err));
-                });
+            //             next();
+            //         });
+
+            //     });
+
+            //     req.on('error', function (err) {
+            //         return next(new Error('Error fetching data from NPM registry: ' + err));
+            //     });
             }
         },
         {
@@ -300,16 +345,38 @@ var task = {
                 //   - consider how rare a token is
                 //   - maybe perform a token "AND" with a quorum (miss threshold)
 
-                var results = [];
-                var hit;
+                var results = [],
+                    result;
+                var hit, nameScore, descriptionScore;
+                var queryTokens = tokenize(opt.query);
                 for (var name in opt.hits) {
-                    hit = opt.hits[name];
-                    results.push({
+                    hit              = opt.hits[name];
+                    nameScore        = getScore(queryTokens, tokenize(name));
+                    descriptionScore = getScore(queryTokens, tokenize(opt.registryData[name].description));
+                    result = {
                         name:        name,
                         description: opt.registryData[name].description,
-                        weight:      hit.name        ? hit.name * opt.name_factor               : 0 +
-                                     hit.description ? hit.description * opt.description_factor : 0
-                    });
+
+                        f1score: {
+                            name:        nameScore.f1score,
+                            description: descriptionScore.f1score
+                        },
+                        precision: {
+                            name:        nameScore.precision,
+                            description: descriptionScore.precision
+                        },
+                        recall: {
+                            name:        nameScore.recall,
+                            description: descriptionScore.recall
+                        }
+                    };
+
+                    result.weight = result.f1score.name * opt.name_factor + result.f1score.description * opt.description_factor;
+
+                    // if score is good enough, include in results
+                    if (result.weight > opt.score_threshold) {
+                        results.push(result);
+                    }
                 }
 
                 results.sort(function (a, b) {
@@ -336,13 +403,14 @@ var task = {
                 if (opt.results.length > 0) {
                     ctx.log.successln('Search results:');
                     opt.results.forEach(function (result) {
-                        ctx.log.infoln(result.name)
+                        ctx.log.infoln(result.weight, result.name);
                         ctx.log.infoln('  ', result.description + '\n');
                     });
                 } else {
                     ctx.log.errorln('Could not find any result');
                 }
                 
+                next();
             }
         }
     ]
