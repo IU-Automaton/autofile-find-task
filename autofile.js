@@ -28,6 +28,7 @@ function isStopWord(word) {
 
 function tokenize(str) {
     // TODO: support stemming and fuzzy match
+    // TODO: support alternative forms of tokens (sass => sass + scss)
 
     var tokens = str
         .toLowerCase()
@@ -43,9 +44,11 @@ function tokenize(str) {
     // filter out stopwords
     var result = [];
     var token;
+    var alreadyInResult = {};
     for (var i in tokens) {
         token = tokens[i];
-        if (!isStopWord(token)) {
+        if (!isStopWord(token) && !alreadyInResult[token]) {
+            alreadyInResult[token] = true;
             result.push(token);
         }
     }
@@ -53,19 +56,12 @@ function tokenize(str) {
     return result;
 }
 
-function rank() {
-    // ranking is as follows:
-    // - task name has a 2x factor
-    // - ranking is normalized between 0 and 1
-    // - 1 is the best match of the resultset
-}
-
 // -----------------------------------------------------------------------------
 
 var task = {
     id: 'task',
     author: 'Indigo United',
-    name: 'create task',
+    name: 'Find task',
 
     options: {
         'clear-cache': {
@@ -74,6 +70,20 @@ var task = {
         },
         query: {
             description: 'What to search for'
+        },
+        keyword: {
+            description: 'The keyword that should be used to perform the ' +
+                         'filter on NPM',
+            'default': 'gruntplugin'
+        },
+        name_factor: {
+            description: 'The factor to apply to the task name when ranking',
+            'default': 4
+        },
+        description_factor: {
+            description: 'The factor to apply to the task description when' +
+                         ' ranking',
+            'default': 1
         }
     },
 
@@ -81,9 +91,6 @@ var task = {
         if (true/* cache is considered outdated*/) {
             opt['update-cache'] = true;
         }
-
-        //opt.taskPrefix = 'automaton-';
-        opt.taskPrefix = 'gruntplugin';
 
         next();
     },
@@ -97,13 +104,13 @@ var task = {
                 var reqOpt = {
                     hostname: '',
                     port: 80,
-                    path: getKeywordSearchPath(opt.taskPrefix),
+                    path: getKeywordSearchPath(opt.keyword),
                     method: 'GET'
                 };
 
                 opt.registryData = '';
 
-                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.taskPrefix);
+                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
                 ctx.log.debugln('Going to fetch data from', registryUrl);
                 var req = https.get(registryUrl, function (res) {
                     if (res.statusCode !== 200) {
@@ -208,21 +215,24 @@ var task = {
                     });
                 }
 
+                // TODO: remove tokens that are too common
+
                 next();
             }
         },
         {
-            description: 'Cache index',
+            description: 'Cache registry data and task index',
             on:          '{{update-cache}}',
 
             task: function (opt, ctx, next) {
-                // TODO: cache index
+                // TODO: cache index and registry data
+                // remember to use the keyword as part of the filename
                 ctx.log.warnln('Should cache index');
                 next();
             }
         },
         {
-            description: 'Load task index',
+            description: 'Load registry data and task index from cache',
             on:          '{{!update-cache}}',
 
             task: function (opt, ctx, next) {
@@ -236,51 +246,43 @@ var task = {
 
             task: function (opt, ctx, next) {
                 // look up occurrences of the query tokens in indexed tasks
-                var hits = opt.hits = {
-                    name: {},
-                    description: {}
-                };
+                var hits = {};
 
+                var idxFields = opt.registryDataIdx.fields;
+                // list of indexed fields
+                var fields    = ['name', 'description'];
 
-                var names        = opt.registryDataIdx.fields.name;
-                var descriptions = opt.registryDataIdx.fields.description;
                 // for each query token
                 tokenize(opt.query).forEach(function (token) {
-                    // for each of the tasks that have that token on the name
-                    names[token].forEach(function (hitId) {
-                        // if this is the first hit for this task
-                        if (!hits[hitId]) {
-                            // add it to hit list
-                            hits[hitId] = {};
+                    // for each of the indexed fields
+                    fields.forEach(function (field) {
+                        // if there is no hit for a specific token, skip
+                        if (!idxFields[field][token]) {
+                            return;
                         }
-                        // increment hit count on the task name
-                        hits[hitId].name[hitId] = hits[hitId].name[hitId] ?
-                            hits[hitId].name[hitId] + 1
-                            : 1;
-                    });
-
-                    // for each of the tasks that have that token on the
-                    // description
-                    descriptions[token].forEach(function (hitId) {
-                        // if this is the first hit for this task
-                        if (!hits[hitId]) {
-                            // add it to hit list
-                            hits[hitId] = {};
-                        }
-                        // increment hit count on the task description
-                        hits[hitId].description[hitId] = hits[hitId].description[hitId] ?
-                            hits[hitId].description[hitId] + 1
-                            : 1;
+                        // for each of the tasks that have that token on the
+                        // field
+                        idxFields[field][token].forEach(function (hitId) {
+                            // if this is the first hit for this task
+                            if (!hits[hitId]) {
+                                // add it to hit list
+                                hits[hitId] = {};
+                            }
+                            // increment hit count of the field for this doc
+                            hits[hitId][field] = hits[hitId][field] ?
+                                hits[hitId][field] + 1
+                                : 1;
+                        });
                     });
                 });
-                 console.log(hits);
-                // for (var hitId in hits.name) {
-                //     console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.name[hitId]);
-                // }
 
-                // for (hitId in hits.description) {
-                //     console.log(opt.registryDataIdx.lookup[parseInt(hitId)], hits.description[hitId]);
-                // }
+                var lookup = opt.registryDataIdx.lookup;
+                opt.hits   = {};
+                for (var hitId in hits) {
+                    opt.hits[lookup[parseInt(hitId, 10)]] = hits[hitId];
+                }
+
+                ctx.log.debugln('Hits:', inspect(opt.hits));
 
                 next();
             }
@@ -289,11 +291,54 @@ var task = {
             description: 'Rank matches',
 
             task: function (opt, ctx, next) {
-                // TODO: improve ranker, as it currently pays no attention to
-                // token order or distance. Instead, it is currently based on
-                // token hit
+                // TODO: improve ranker:
+                //   - consider token order and distance
+                //   - consider how rare a token is
+                //   - maybe perform a token "AND" with a quorum (miss threshold)
 
+                var results = [];
+                var hit;
+                for (var name in opt.hits) {
+                    hit = opt.hits[name];
+                    results.push({
+                        name:        name,
+                        description: opt.registryData[name].description,
+                        weight:      hit.name        ? hit.name * opt.name_factor               : 0 +
+                                     hit.description ? hit.description * opt.description_factor : 0
+                    });
+                }
 
+                results.sort(function (a, b) {
+                    if (a.weight > b.weight) {
+                        return -1;
+                    } else if (a.weight < b.weight) {
+                        return 1;
+                    }
+
+                    return 0;
+                });
+
+                opt.results = results;
+
+                ctx.log.debugln('Ranked results:', results);
+
+                next();
+            }
+        },
+        {
+            description: 'Output results',
+
+            task: function (opt, ctx, next) {
+                if (opt.results.length > 0) {
+                    ctx.log.successln('Search results:');
+                    opt.results.forEach(function (result) {
+                        ctx.log.infoln(result.name)
+                        ctx.log.infoln('  ', result.description + '\n');
+                    });
+                } else {
+                    ctx.log.errorln('Could not find any result');
+                }
+                
             }
         }
     ]
