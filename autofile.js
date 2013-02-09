@@ -179,6 +179,10 @@ var task = {
                 };
                 var nameTokens, descriptionTokens;
 
+                // TODO: maybe create an afinity graph, which relates tokens
+                // to all the other tokens, based on the amount of times they
+                // appear together, so that the search can be tweaked a bit?
+
                 // TODO: optimize and refactor indexing below
                 // for each of the tasks
                 for (var name in tasks) {
@@ -320,7 +324,7 @@ var task = {
 
                 opt.results = results;
 
-                ctx.log.debugln('Ranked results:', results);
+                ctx.log.debugln('Ranked results:', inspect(results));
 
                 next();
             }
