@@ -151,38 +151,38 @@ var task = {
             task: function (opt, ctx, next) {
                 opt.registryData = '';
 
-                // TODO: remove hack below
-                opt.registryData = require('./registryData.json');
-                next();
+                // // TODO: remove hack below
+                // opt.registryData = require('./registryData.json');
+                // next();
 
             // TODO: uncomment below
-            //     var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
-            //     ctx.log.debugln('Going to fetch data from', registryUrl);
-            //     //var req = https.get(registryUrl, function (res) {
+                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
+                ctx.log.debugln('Going to fetch data from', registryUrl);
+                var req = https.get(registryUrl, function (res) {
 
-            //         if (res.statusCode !== 200) {
-            //             return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-            //         }
+                    if (res.statusCode !== 200) {
+                        return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
+                    }
 
-            //         ctx.log.debugln('Starting response');
+                    ctx.log.debugln('Starting response');
 
-            //         res.on('data', function (chunk) {
-            //             ctx.log.debug('.');
-            //             opt.registryData += chunk;
-            //         });
+                    res.on('data', function (chunk) {
+                        ctx.log.debug('.');
+                        opt.registryData += chunk;
+                    });
 
-            //         res.on('end', function () {
-            //             ctx.log.debugln('Response ready');
-            //             opt.registryData = JSON.parse(opt.registryData);
+                    res.on('end', function () {
+                        ctx.log.debugln('Response ready');
+                        opt.registryData = JSON.parse(opt.registryData);
 
-            //             next();
-            //         });
+                        next();
+                    });
 
-            //     });
+                });
 
-            //     req.on('error', function (err) {
-            //         return next(new Error('Error fetching data from NPM registry: ' + err));
-            //     });
+                req.on('error', function (err) {
+                    return next(new Error('Error fetching data from NPM registry: ' + err));
+                });
             }
         },
         {
@@ -417,7 +417,7 @@ var task = {
 
                     ctx.log.infoln(tab.get());
 
-                    ctx.log.infoln('To install a module, simply run `npm install module_name`.\n');
+                    ctx.log.infoln('\nTo install a module, simply run `npm install module_name`.\n');
 
                 } else {
                     ctx.log.errorln('Could not find any result');
