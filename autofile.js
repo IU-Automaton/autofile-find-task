@@ -152,37 +152,37 @@ var task = {
                 opt.registryData = '';
 
                 // // TODO: remove hack below
-                // opt.registryData = require('./registryData.json');
-                // next();
+                opt.registryData = require('./registryData.json');
+                next();
 
             // TODO: uncomment below
-                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
-                ctx.log.debugln('Going to fetch data from', registryUrl);
-                var req = https.get(registryUrl, function (res) {
+                // var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
+                // ctx.log.debugln('Going to fetch data from', registryUrl);
+                // var req = https.get(registryUrl, function (res) {
 
-                    if (res.statusCode !== 200) {
-                        return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-                    }
+                //     if (res.statusCode !== 200) {
+                //         return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
+                //     }
 
-                    ctx.log.debugln('Starting response');
+                //     ctx.log.debugln('Starting response');
 
-                    res.on('data', function (chunk) {
-                        ctx.log.debug('.');
-                        opt.registryData += chunk;
-                    });
+                //     res.on('data', function (chunk) {
+                //         ctx.log.debug('.');
+                //         opt.registryData += chunk;
+                //     });
 
-                    res.on('end', function () {
-                        ctx.log.debugln('Response ready');
-                        opt.registryData = JSON.parse(opt.registryData);
+                //     res.on('end', function () {
+                //         ctx.log.debugln('Response ready');
+                //         opt.registryData = JSON.parse(opt.registryData);
 
-                        next();
-                    });
+                //         next();
+                //     });
 
-                });
+                // });
 
-                req.on('error', function (err) {
-                    return next(new Error('Error fetching data from NPM registry: ' + err));
-                });
+                // req.on('error', function (err) {
+                //     return next(new Error('Error fetching data from NPM registry: ' + err));
+                // });
             }
         },
         {
@@ -373,10 +373,16 @@ var task = {
                         }
                     };
 
-                    result.weight = result.f1score.name * opt.name_factor + result.f1score.description * opt.description_factor;
+                    //result.weight = result.f1score.name * opt.name_factor + result.f1score.description * opt.description_factor;
+                    result.weight = result.precision.name * 1 * opt.name_factor +
+                                    result.recall.name * opt.name_factor +
+                                    result.precision.description * 1 * opt.description_factor +
+                                    result.recall.description * opt.description_factor +
+                                    result.f1score.name * opt.name_factor +
+                                    result.f1score.description * opt.description_factor;
 
                     // if score is good enough, include in results
-                    if (result.weight > opt.score_threshold) {
+                    if (result.f1score.name > opt.score_threshold || result.f1score.description > opt.score_threshold) {
                         results.push(result);
                     }
                 }
@@ -410,9 +416,11 @@ var task = {
                     });
 
                     opt.results.forEach(function (result) {
-                        tab.push([result.name.grey, result.description]);
-//                        ctx.log.infoln(result.weight, result.name);
-//                        ctx.log.infoln('  ', result.description + '\n');
+                        tab.push([result.name.grey,
+                            // ' ' + result.precision.description +
+                            // ' ' + result.recall.description +
+                            // ' ' + result.weight,
+                            result.description]);
                     });
 
                     ctx.log.infoln(tab.get());
