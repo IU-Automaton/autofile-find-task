@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "description": "Task that allows the user to search for automaton community tasks",
   "main": "autofile.js",
-  "dependencies": {},
+  "dependencies": {
+    "colors": "~0.6.0-1"
+  },
   "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -2,6 +2,8 @@
 
 var https   = require('https');
 var fs      = require('fs');
+var Tabular = require('tabular');
+var colors  = require('colors');
 
 // -----------------------------------------------------------------------------
 
@@ -401,11 +403,22 @@ var task = {
 
             task: function (opt, ctx, next) {
                 if (opt.results.length > 0) {
-                    ctx.log.successln('Search results:');
-                    opt.results.forEach(function (result) {
-                        ctx.log.infoln(result.weight, result.name);
-                        ctx.log.infoln('  ', result.description + '\n');
+                    ctx.log.successln('\nSearch results:\n');
+
+                    var tab = new Tabular({
+                        marginLeft: 2
                     });
+
+                    opt.results.forEach(function (result) {
+                        tab.push([result.name.grey, result.description]);
+//                        ctx.log.infoln(result.weight, result.name);
+//                        ctx.log.infoln('  ', result.description + '\n');
+                    });
+
+                    ctx.log.infoln(tab.get());
+
+                    ctx.log.infoln('To install a module, simply run `npm install module_name`.\n');
+
                 } else {
                     ctx.log.errorln('Could not find any result');
                 }
