@@ -3,7 +3,7 @@
 var https   = require('https');
 var fs      = require('fs');
 var Tabular = require('tabular');
-var colors  = require('colors');
+require('colors');
 
 // -----------------------------------------------------------------------------
 
@@ -111,7 +111,7 @@ var task = {
             description: 'If the NPM registry cache should be updated',
             'default': false
         },
-        cache_lifetime: {
+        'cache-lifetime': {
             description: 'For how many minutes should the cache be valid',
             'default': 720 // 12 hours
         },
@@ -123,16 +123,16 @@ var task = {
                          'filter on NPM',
             'default': 'gruntplugin'
         },
-        name_factor: {
+        'name-factor': {
             description: 'The factor to apply to the task name when ranking',
             'default': 4
         },
-        description_factor: {
+        'description-factor': {
             description: 'The factor to apply to the task description when' +
                          ' ranking',
             'default': 1
         },
-        score_threshold: {
+        'score-threshold': {
             description: 'The score threshold that a match must reach for ' +
                          'being included in the search results',
             'default': 0.2
@@ -143,25 +143,21 @@ var task = {
         opt.cacheFile = __dirname + '/.cache.' + opt.keyword + '.json';
 
         // if user forced cache update
-        if (opt['clear-cache']) {
-            opt['update-cache'] = true;
-            
-            next();
-        } else {
+        if (!opt['clear-cache']) {
             // check if cache exists
             fs.exists(opt.cacheFile, function (exists) {
                 if (!exists) {
-                    opt['update-cache'] = true;
+                    opt['clear-cache'] = true;
                 } else {
                     var cache = require(opt.cacheFile);
 
                     // if cache is not outdated
                     cache.delay = (((new Date()).getTime() - cache.timestamp) / 1000 / 60);
-                    if (cache.delay <= opt.cache_lifetime) {
-                        opt['update-cache'] = false;
+                    if (cache.delay <= opt['cache-lifetime']) {
+                        // put cache in options
                         opt.cache = cache;
                     } else {
-                        opt['update-cache'] = true;
+                        opt['clear-cache'] = true;
                     }
                 }
 
@@ -173,7 +169,7 @@ var task = {
     tasks: [
         {
             description: 'Fetch information from NPM registry',
-            on:          '{{update-cache}}',
+            on:          '{{clear-cache}}',
 
             task: function (opt, ctx, next) {
                 opt.registryData = '';
@@ -214,7 +210,7 @@ var task = {
         },
         {
             description: 'Parse NPM registry data',
-            on:          '{{update-cache}}',
+            on:          '{{clear-cache}}',
 
             task: function (opt, ctx, next) {
                 ctx.log.debugln('Going to build index');
@@ -237,7 +233,7 @@ var task = {
         },
         {
             description: 'Build index',
-            on:          '{{update-cache}}',
+            on:          '{{clear-cache}}',
 
             task: function (opt, ctx, next) {
                 var tasks = opt.registryData;
@@ -300,7 +296,7 @@ var task = {
         },
         {
             description: 'Cache registry data and task index',
-            on:          '{{update-cache}}',
+            on:          '{{clear-cache}}',
 
             task: function (opt, ctx, next) {
                 var cache = {
@@ -322,7 +318,7 @@ var task = {
         },
         {
             description: 'Load registry data and task index from cache',
-            on:          '{{!update-cache}}',
+            on:          '{{!clear-cache}}',
 
             task: function (opt, ctx, next) {
                 opt.registryData    = opt.cache.registryData;
@@ -414,16 +410,15 @@ var task = {
                         }
                     };
 
-                    //result.weight = result.f1score.name * opt.name_factor + result.f1score.description * opt.description_factor;
-                    result.weight = result.precision.name * 1 * opt.name_factor +
-                                    result.recall.name * opt.name_factor +
-                                    result.precision.description * 1 * opt.description_factor +
-                                    result.recall.description * opt.description_factor +
-                                    result.f1score.name * opt.name_factor +
-                                    result.f1score.description * opt.description_factor;
+                    result.weight = result.precision.name * 1 * opt['name-factor'] +
+                                    result.recall.name * opt['name-factor'] +
+                                    result.precision.description * 1 * opt['description-factor'] +
+                                    result.recall.description * opt['description-factor'] +
+                                    result.f1score.name * opt['name-factor'] +
+                                    result.f1score.description * opt['description-factor'];
 
                     // if score is good enough, include in results
-                    if (result.f1score.name > opt.score_threshold || result.f1score.description > opt.score_threshold) {
+                    if (result.f1score.name > opt['score-threshold'] || result.f1score.description > opt['score-threshold']) {
                         results.push(result);
                     }
                 }
@@ -456,6 +451,7 @@ var task = {
                         marginLeft: 2
                     });
 
+                    // ★ ❤
                     opt.results.forEach(function (result) {
                         tab.push([result.name.grey,
                             // ' ' + result.precision.description +

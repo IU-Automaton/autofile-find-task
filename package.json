@@ -4,7 +4,8 @@
   "description": "Task that allows the user to search for automaton community tasks",
   "main": "autofile.js",
   "dependencies": {
-    "colors": "~0.6.0-1"
+    "colors": "~0.6.0-1",
+    "tabular": "0.0.1"
   },
   "devDependencies": {},
   "scripts": {
@@ -24,6 +25,5 @@
   ],
   "author": "Indigo United",
   "license": "MIT",
-  "readmeFilename": "README.md",
-  "gitHead": "dc4001b539abf383b0a442d911eb6dcd158362ac"
+  "readmeFilename": "README.md"
 }
