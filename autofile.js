@@ -111,6 +111,10 @@ var task = {
             description: 'If the NPM registry cache should be updated',
             'default': false
         },
+        cache_lifetime: {
+            description: 'For how many minutes should the cache be valid',
+            'default': 720 // 12 hours
+        },
         query: {
             description: 'What to search for'
         },
@@ -136,11 +140,34 @@ var task = {
     },
 
     filter: function (opt, ctx, next) {
-        if (true/* TODO: if cache is considered outdated*/) {
-            opt['update-cache'] = true;
-        }
+        opt.cacheFile = __dirname + '/.cache.' + opt.keyword + '.json';
 
-        next();
+        // if user forced cache update
+        if (opt['clear-cache']) {
+            opt['update-cache'] = true;
+            
+            next();
+        } else {
+            // check if cache exists
+            fs.exists(opt.cacheFile, function (exists) {
+                if (!exists) {
+                    opt['update-cache'] = true;
+                } else {
+                    var cache = require(opt.cacheFile);
+
+                    // if cache is not outdated
+                    cache.delay = (((new Date()).getTime() - cache.timestamp) / 1000 / 60);
+                    if (cache.delay <= opt.cache_lifetime) {
+                        opt['update-cache'] = false;
+                        opt.cache = cache;
+                    } else {
+                        opt['update-cache'] = true;
+                    }
+                }
+
+                next();
+            });
+        }
     },
 
     tasks: [
@@ -152,37 +179,37 @@ var task = {
                 opt.registryData = '';
 
                 // // TODO: remove hack below
-                opt.registryData = require('./registryData.json');
-                next();
+                // opt.registryData = require('./registryData.json');
+                // next();
 
             // TODO: uncomment below
-                // var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
-                // ctx.log.debugln('Going to fetch data from', registryUrl);
-                // var req = https.get(registryUrl, function (res) {
+                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
+                ctx.log.debugln('Going to fetch data from', registryUrl);
+                var req = https.get(registryUrl, function (res) {
 
-                //     if (res.statusCode !== 200) {
-                //         return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-                //     }
+                    if (res.statusCode !== 200) {
+                        return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
+                    }
 
-                //     ctx.log.debugln('Starting response');
+                    ctx.log.debugln('Starting response');
 
-                //     res.on('data', function (chunk) {
-                //         ctx.log.debug('.');
-                //         opt.registryData += chunk;
-                //     });
+                    res.on('data', function (chunk) {
+                        ctx.log.debug('.');
+                        opt.registryData += chunk;
+                    });
 
-                //     res.on('end', function () {
-                //         ctx.log.debugln('Response ready');
-                //         opt.registryData = JSON.parse(opt.registryData);
+                    res.on('end', function () {
+                        ctx.log.debugln('Response ready');
+                        opt.registryData = JSON.parse(opt.registryData);
 
-                //         next();
-                //     });
+                        next();
+                    });
 
-                // });
+                });
 
-                // req.on('error', function (err) {
-                //     return next(new Error('Error fetching data from NPM registry: ' + err));
-                // });
+                req.on('error', function (err) {
+                    return next(new Error('Error fetching data from NPM registry: ' + err));
+                });
             }
         },
         {
@@ -276,10 +303,21 @@ var task = {
             on:          '{{update-cache}}',
 
             task: function (opt, ctx, next) {
-                // TODO: cache index and registry data
-                // remember to use the keyword as part of the filename
-                ctx.log.warnln('Should cache index');
-                next();
+                var cache = {
+                    timestamp: (new Date()).getTime(),
+                    registryData:    opt.registryData,
+                    registryDataIdx: opt.registryDataIdx
+                };
+
+                fs.writeFile(opt.cacheFile, JSON.stringify(cache), function (err) {
+                    if (err) {
+                        return next('Could not store cache file: ' + err);
+                    }
+
+                    ctx.log.debugln('Wrote cache file:', opt.cacheFile);
+
+                    next();
+                });
             }
         },
         {
@@ -287,8 +325,11 @@ var task = {
             on:          '{{!update-cache}}',
 
             task: function (opt, ctx, next) {
-                // TODO: load index cache
-                ctx.log.warnln('Should load the task from index');
+                opt.registryData    = opt.cache.registryData;
+                opt.registryDataIdx = opt.cache.registryDataIdx;
+
+                ctx.log.debugln('Loaded cached data ' + Math.round(opt.cache.delay) + ' minutes old');
+
                 next();
             }
         },
