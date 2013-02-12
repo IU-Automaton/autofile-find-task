@@ -121,11 +121,15 @@ var task = {
         query: {
             description: 'What to search for'
         },
-        keyword: {
-            description: 'The keyword that should be used to perform the ' +
-                         'filter on NPM',
-            'default': ['autofile', 'gruntplugin']
+        grunt: {
+            description: 'If grunt tasks should be included in the search',
+            'default': false
         },
+        // keyword: {
+        //     description: 'The keyword that should be used to perform the ' +
+        //                  'filter on NPM',
+        //     'default': ['autofile', 'gruntplugin']
+        // },
         'name-factor': {
             description: 'The factor to apply to the task name when ranking',
             'default': 4
@@ -145,6 +149,8 @@ var task = {
     filter: function (opt, ctx, next) {
         opt.cacheFile = __dirname + '/.cache.json';
 
+        opt.keyword = ['autofile', 'gruntplugin'];
+
         // if user forced cache update
         if (!opt['clear-cache']) {
             // check if cache exists
@@ -161,8 +167,9 @@ var task = {
                     } else {
                         // if any of the keywords was not used to build the
                         // current cache
-                        opt['clear-cache'] = opt.keyword.reduce(function (missedKeyword, keyword) {
-                            return cache.keyword.indexOf(keyword) === -1 ? true : false;
+                        opt['clear-cache'] = opt.keyword.length !== cache.keyword.length ||
+                            opt.keyword.reduce(function (missedKeyword, keyword) {
+                            return (cache.keyword.indexOf(keyword) === -1 ? true : false) || missedKeyword;
                         }, false);
 
                         // if it's not necessary to clear cache
@@ -204,7 +211,7 @@ var task = {
 
                         res.on('end', function () {
                             ctx.log.debugln('Response ready');
-                            data = JSON.parse(opt.data);
+                            data = JSON.parse(data);
 
                             callback(null, data);
                         });
@@ -215,11 +222,13 @@ var task = {
                     });
                 };
 
+                // create batch for fetching the info from NPM
                 var batch = {};
                 opt.keyword.forEach(function (keyword) {
                     batch[keyword] = fetchKeywordPackages.bind(this, keyword);
                 });
 
+                // run batch
                 async.parallel(batch, function (err, result) {
                     if (err) {
                         return next(new Error('Error fetching keyword packages from registry: ' + err));
@@ -239,12 +248,25 @@ var task = {
 
                 var tasks = {};
 
-                var rows = opt.registryData.rows;
+                // for each of the keywords
+                for (var keyword in opt.registryData) {
+                    // go over each of the tasks of that keyword
+                    opt.registryData[keyword].rows.forEach(function (entry) {
+                        var name        = entry.key[1];
+                        var description = entry.key[2];
 
-                for (var k in opt.registryData.rows) {
-                    tasks[rows[k].key[1]] = {
-                        description: rows[k].key[2]
-                    };
+                        // if task hadn't been found before in another keyword
+                        if (!tasks[name]) {
+                            // add it to the list
+                            tasks[name] = {
+                                description: description,
+                                keyword: []
+                            };
+                        }
+
+                        // add keyword to the list of the task keywords
+                        tasks[name].keyword.push(keyword);
+                    });
                 }
 
                 ctx.log.debugln('result:', inspect(tasks));
@@ -380,6 +402,8 @@ var task = {
                                 hits[hitId] = {};
                             }
                             // increment hit count of the field for this doc
+                            // note that this hit count is not currently being
+                            // used (as of 2013-02-12)
                             hits[hitId][field] = hits[hitId][field] ?
                                 hits[hitId][field] + 1
                                 : 1;
@@ -387,10 +411,25 @@ var task = {
                     });
                 });
 
+                // create hits object in which the keys are the task names and
+                // the value is an object with field name and the hit count.
+                // also filter out any result that does not match the keywords
                 var lookup = opt.registryDataIdx.lookup;
                 opt.hits   = {};
+                var name;
                 for (var hitId in hits) {
-                    opt.hits[lookup[parseInt(hitId, 10)]] = hits[hitId];
+                    name = lookup[parseInt(hitId, 10)];
+                    // if grunt tasks are to be ignored and this task is only
+                    // for grunt
+                    if (!opt.grunt &&
+                        opt.registryData[name].keyword.length === 1 &&
+                        opt.registryData[name].keyword[0] === 'gruntplugin'
+                    ) {
+                        // do not include in hits
+                        continue;
+                    }
+
+                    opt.hits[name] = hits[hitId];
                 }
 
                 ctx.log.debugln('Hits:', inspect(opt.hits));
@@ -402,10 +441,9 @@ var task = {
             description: 'Rank matches',
 
             task: function (opt, ctx, next) {
-                // TODO: improve ranker:
+                // TODO: maybe improve ranker?
                 //   - consider token order and distance
                 //   - consider how rare a token is
-                //   - maybe perform a token "AND" with a quorum (miss threshold)
 
                 var results = [],
                     result;
@@ -433,12 +471,17 @@ var task = {
                         }
                     };
 
-                    result.weight = result.precision.name * 1 * opt['name-factor'] +
-                                    result.recall.name * opt['name-factor'] +
-                                    result.precision.description * 1 * opt['description-factor'] +
-                                    result.recall.description * opt['description-factor'] +
-                                    result.f1score.name * opt['name-factor'] +
-                                    result.f1score.description * opt['description-factor'];
+                    result.weight = opt['name-factor'] * (
+                                        result.precision.name +
+                                        result.recall.name +
+                                        result.f1score.name
+                                    ) +
+                                    opt['description-factor'] * (
+                                        result.precision.description +
+                                        result.recall.description +
+                                        result.f1score.description
+                                    )
+                    ;
 
                     // if score is good enough, include in results
                     if (result.f1score.name > opt['score-threshold'] || result.f1score.description > opt['score-threshold']) {
