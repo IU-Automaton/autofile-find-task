@@ -5,7 +5,8 @@
   "main": "autofile.js",
   "dependencies": {
     "colors": "~0.6.0-1",
-    "tabular": "0.0.1"
+    "tabular": "0.0.1",
+    "async": "~0.2.5"
   },
   "devDependencies": {},
   "scripts": {

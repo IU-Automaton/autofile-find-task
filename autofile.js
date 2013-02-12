@@ -1,8 +1,11 @@
+/*jshint es5:true*/
+
 'use strict';
 
 var https   = require('https');
 var fs      = require('fs');
 var Tabular = require('tabular');
+var async   = require('async');
 require('colors');
 
 // -----------------------------------------------------------------------------
@@ -121,7 +124,7 @@ var task = {
         keyword: {
             description: 'The keyword that should be used to perform the ' +
                          'filter on NPM',
-            'default': 'gruntplugin'
+            'default': ['autofile', 'gruntplugin']
         },
         'name-factor': {
             description: 'The factor to apply to the task name when ranking',
@@ -140,7 +143,7 @@ var task = {
     },
 
     filter: function (opt, ctx, next) {
-        opt.cacheFile = __dirname + '/.cache.' + opt.keyword + '.json';
+        opt.cacheFile = __dirname + '/.cache.json';
 
         // if user forced cache update
         if (!opt['clear-cache']) {
@@ -151,13 +154,22 @@ var task = {
                 } else {
                     var cache = require(opt.cacheFile);
 
-                    // if cache is not outdated
+                    // if cache is outdated
                     cache.delay = (((new Date()).getTime() - cache.timestamp) / 1000 / 60);
-                    if (cache.delay <= opt['cache-lifetime']) {
-                        // put cache in options
-                        opt.cache = cache;
-                    } else {
+                    if (cache.delay > opt['cache-lifetime']) {
                         opt['clear-cache'] = true;
+                    } else {
+                        // if any of the keywords was not used to build the
+                        // current cache
+                        opt['clear-cache'] = opt.keyword.reduce(function (missedKeyword, keyword) {
+                            return cache.keyword.indexOf(keyword) === -1 ? true : false;
+                        }, false);
+
+                        // if it's not necessary to clear cache
+                        if (!opt['clear-cache']) {
+                            // put cache in options
+                            opt.cache = cache;
+                        }
                     }
                 }
 
@@ -172,39 +184,49 @@ var task = {
             on:          '{{clear-cache}}',
 
             task: function (opt, ctx, next) {
-                opt.registryData = '';
+                // create function that fetches all the packages with a specific
+                // keyword
+                var fetchKeywordPackages = function (keyword, callback) {
+                    var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(keyword);
+                    ctx.log.debugln('Going to fetch data from', registryUrl);
+                    var req = https.get(registryUrl, function (res) {
+                        if (res.statusCode !== 200) {
+                            return callback(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
+                        }
 
-                // // TODO: remove hack below
-                // opt.registryData = require('./registryData.json');
-                // next();
+                        ctx.log.debugln('Starting response');
+                        var data = '';
 
-            // TODO: uncomment below
-                var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(opt.keyword);
-                ctx.log.debugln('Going to fetch data from', registryUrl);
-                var req = https.get(registryUrl, function (res) {
+                        res.on('data', function (chunk) {
+                            ctx.log.debug('.');
+                            data += chunk;
+                        });
 
-                    if (res.statusCode !== 200) {
-                        return next(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-                    }
+                        res.on('end', function () {
+                            ctx.log.debugln('Response ready');
+                            data = JSON.parse(opt.data);
 
-                    ctx.log.debugln('Starting response');
-
-                    res.on('data', function (chunk) {
-                        ctx.log.debug('.');
-                        opt.registryData += chunk;
+                            callback(null, data);
+                        });
                     });
 
-                    res.on('end', function () {
-                        ctx.log.debugln('Response ready');
-                        opt.registryData = JSON.parse(opt.registryData);
-
-                        next();
+                    req.on('error', function (err) {
+                        return callback(new Error('Error fetching data from NPM registry: ' + err));
                     });
+                };
 
+                var batch = {};
+                opt.keyword.forEach(function (keyword) {
+                    batch[keyword] = fetchKeywordPackages.bind(this, keyword);
                 });
 
-                req.on('error', function (err) {
-                    return next(new Error('Error fetching data from NPM registry: ' + err));
+                async.parallel(batch, function (err, result) {
+                    if (err) {
+                        return next(new Error('Error fetching keyword packages from registry: ' + err));
+                    }
+
+                    opt.registryData = result;
+                    next();
                 });
             }
         },
@@ -301,6 +323,7 @@ var task = {
             task: function (opt, ctx, next) {
                 var cache = {
                     timestamp: (new Date()).getTime(),
+                    keyword:         opt.keyword,
                     registryData:    opt.registryData,
                     registryDataIdx: opt.registryDataIdx
                 };
