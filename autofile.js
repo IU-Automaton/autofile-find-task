@@ -31,6 +31,28 @@ function isStopWord(word) {
     return stopWordsIdx.hasOwnProperty(word);
 }
 
+function httpsGetJSON(url, callback) {
+    var req = https.get(url, function (res) {
+        if (res.statusCode !== 200) {
+            return callback(new Error('HTTP status code: ' + res.statusCode));
+        }
+
+        var data = '';
+
+        res.on('data', function (chunk) {
+            data += chunk;
+        });
+
+        res.on('end', function () {
+            callback(null, JSON.parse(data));
+        });
+    });
+
+    req.on('error', function (err) {
+        return callback(err);
+    });
+}
+
 function tokenize(str) {
     // TODO: support stemming and fuzzy match
     // TODO: support alternative forms of tokens (sass => sass + scss)
@@ -125,11 +147,6 @@ var task = {
             description: 'If grunt tasks should be included in the search',
             'default': false
         },
-        // keyword: {
-        //     description: 'The keyword that should be used to perform the ' +
-        //                  'filter on NPM',
-        //     'default': ['autofile', 'gruntplugin']
-        // },
         'name-factor': {
             description: 'The factor to apply to the task name when ranking',
             'default': 4
@@ -182,6 +199,8 @@ var task = {
 
                 next();
             });
+        } else {
+            next();
         }
     },
 
@@ -196,30 +215,8 @@ var task = {
                 var fetchKeywordPackages = function (keyword, callback) {
                     var registryUrl = 'https://registry.npmjs.org' + getKeywordSearchPath(keyword);
                     ctx.log.debugln('Going to fetch data from', registryUrl);
-                    var req = https.get(registryUrl, function (res) {
-                        if (res.statusCode !== 200) {
-                            return callback(new Error('Unexpected HTTP status code while fetching data from NPM registry: ' + res.statusCode));
-                        }
 
-                        ctx.log.debugln('Starting response');
-                        var data = '';
-
-                        res.on('data', function (chunk) {
-                            ctx.log.debug('.');
-                            data += chunk;
-                        });
-
-                        res.on('end', function () {
-                            ctx.log.debugln('Response ready');
-                            data = JSON.parse(data);
-
-                            callback(null, data);
-                        });
-                    });
-
-                    req.on('error', function (err) {
-                        return callback(new Error('Error fetching data from NPM registry: ' + err));
-                    });
+                    httpsGetJSON(registryUrl, callback);
                 };
 
                 // create batch for fetching the info from NPM
@@ -228,12 +225,41 @@ var task = {
                     batch[keyword] = fetchKeywordPackages.bind(this, keyword);
                 });
 
+                // also fetch info from automaton registry
+                batch['automaton-registry'] = function (callback) {
+                    httpsGetJSON(
+                        'https://raw.github.com/IU-Automaton/automaton-registry/master/db/registry.json',
+                        function (err, data) {
+                            // if some error occurred, ignore, and return empty
+                            // automaton registry data, since it's just
+                            // additional info to improve overall experience
+                            if (err) {
+                                ctx.log.errorln('Unable to fetch Automaton registry data. Using NPM data only...');
+                                data = {
+                                    timestamp: (new Date()).toString(),
+                                    official:     [],
+                                    recommended:  [],
+                                    blacklist:    [],
+                                    dependedUpon: {}
+                                };
+                            }
+
+                            callback(null, data);
+                        }
+                    );
+                };
+
                 // run batch
                 async.parallel(batch, function (err, result) {
                     if (err) {
-                        return next(new Error('Error fetching keyword packages from registry: ' + err));
+                        return next(new Error('Error fetching registry: ' + err));
                     }
 
+                    // store automaton registry
+                    opt.automatonRegistryData = result['automaton-registry'];
+                    delete result['automaton-registry'];
+
+                    // store module data
                     opt.registryData = result;
                     next();
                 });
@@ -248,24 +274,36 @@ var task = {
 
                 var tasks = {};
 
+                var official    = opt.automatonRegistryData.official;
+                var recommended = opt.automatonRegistryData.recommended;
+                var blacklist   = opt.automatonRegistryData.blacklist;
+                var dependents  = opt.automatonRegistryData.dependedUpon;
+
                 // for each of the keywords
                 for (var keyword in opt.registryData) {
                     // go over each of the tasks of that keyword
                     opt.registryData[keyword].rows.forEach(function (entry) {
                         var name        = entry.key[1];
-                        var description = entry.key[2];
 
-                        // if task hadn't been found before in another keyword
-                        if (!tasks[name]) {
-                            // add it to the list
-                            tasks[name] = {
-                                description: description,
-                                keyword: []
-                            };
+                        // if task is not blacklisted
+                        if (!blacklist[name]) {
+                            var description = entry.key[2];
+
+                            // if task hadn't been found before in another keyword
+                            if (!tasks[name]) {
+                                // add it to the list
+                                tasks[name] = {
+                                    description: description,
+                                    keyword:     [],
+                                    official:    !!official[name],
+                                    recommended: !!recommended[name],
+                                    dependents:  dependents[name] ? dependents[name] : 0
+                                };
+                            }
+
+                            // add keyword to the list of the task keywords
+                            tasks[name].keyword.push(keyword);
                         }
-
-                        // add keyword to the list of the task keywords
-                        tasks[name].keyword.push(keyword);
                     });
                 }
 
@@ -345,9 +383,9 @@ var task = {
             task: function (opt, ctx, next) {
                 var cache = {
                     timestamp: (new Date()).getTime(),
-                    keyword:         opt.keyword,
-                    registryData:    opt.registryData,
-                    registryDataIdx: opt.registryDataIdx
+                    keyword:               opt.keyword,
+                    registryData:          opt.registryData,
+                    registryDataIdx:       opt.registryDataIdx
                 };
 
                 fs.writeFile(opt.cacheFile, JSON.stringify(cache), function (err) {
@@ -456,6 +494,10 @@ var task = {
                     result = {
                         name:        name,
                         description: opt.registryData[name].description,
+                        official:    opt.registryData[name].official,
+                        recommended: opt.registryData[name].recommended,
+
+                        dependents: opt.registryData[name].dependents,
 
                         f1score: {
                             name:        nameScore.f1score,
@@ -517,12 +559,10 @@ var task = {
                         marginLeft: 2
                     });
 
-                    // ★ ❤
                     opt.results.forEach(function (result) {
-                        tab.push([result.name.grey,
-                            // ' ' + result.precision.description +
-                            // ' ' + result.recall.description +
-                            // ' ' + result.weight,
+                        tab.push([result.name.grey +
+                            (result.official ? ' (Official)'.blue : '') +
+                            (result.recommended ? ' ★'.yellow : ''),
                             result.description]);
                     });
 
