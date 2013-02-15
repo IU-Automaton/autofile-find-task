@@ -163,7 +163,7 @@ var task = {
         }
     },
 
-    filter: function (opt, ctx, next) {
+    setup: function (opt, ctx, next) {
         opt.cacheFile = __dirname + '/.cache.json';
 
         opt.keyword = ['autofile', 'gruntplugin'];
