@@ -1,6 +1,6 @@
 {
-  "name": "automaton-find-task",
-  "version": "0.0.0",
+  "name": "autofile-find-task",
+  "version": "0.0.1",
   "description": "Task that allows the user to search for automaton community tasks",
   "main": "autofile.js",
   "dependencies": {
@@ -14,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/IU-Automaton/automaton-find-task.git"
+    "url": "git://github.com/IU-Automaton/autofile-find-task.git"
   },
   "keywords": [
     "autofile",

@@ -228,7 +228,7 @@ var task = {
                 // also fetch info from automaton registry
                 batch['automaton-registry'] = function (callback) {
                     httpsGetJSON(
-                        'https://raw.github.com/IU-Automaton/automaton-registry/master/db/registry.json',
+                        'https://raw.github.com/IU-Automaton/autofile-registry/master/db/registry.json',
                         function (err, data) {
                             // if some error occurred, ignore, and return empty
                             // automaton registry data, since it's just
